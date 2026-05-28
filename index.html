@@ -1518,12 +1518,16 @@ function joinAsGuest(code) {
 /* ---- per-recipient state filtering (hide private hands) ---- */
 function personalizeState(recipientId) {
   const s = local.state;
-  if (s.mode !== 'take_six' || !s.modeState?.hands) return s;
-  // Clone and redact other players' hands
+  // Always strip deck and drawn from guests — they're host-only and can be huge
   const copy = JSON.parse(JSON.stringify(s));
-  for (const pid of Object.keys(copy.modeState.hands)) {
-    if (pid !== recipientId) {
-      copy.modeState.hands[pid] = copy.modeState.hands[pid].map(() => ({ hidden: true }));
+  copy.deck = [];
+  copy.drawn = [];
+  // Redact other players' hands in Take Six
+  if (s.mode === 'take_six' && s.modeState?.hands) {
+    for (const pid of Object.keys(copy.modeState.hands)) {
+      if (pid !== recipientId) {
+        copy.modeState.hands[pid] = copy.modeState.hands[pid].map(() => ({ hidden: true }));
+      }
     }
   }
   return copy;
