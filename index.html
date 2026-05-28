@@ -1617,7 +1617,7 @@ async function buildDeck() {
     toast('Preset too narrow — using full deck', 'error');
     source = BUILTIN_DECK;
   }
-  const cards = source.map(c => ({ actor: c.actor, film: c.film }));
+  const cards = source.map(c => ({ actor: c.actor, film: c.film, poster: c.poster, actorPhoto: c.actorPhoto }));
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [cards[i], cards[j]] = [cards[j], cards[i]];
@@ -2226,7 +2226,7 @@ function gameSkipCard(peerId) {
 let _hintRevealed = {};
 let _hintPanelOpen = {};
 
-function skipHintPanel(actorName) {
+function skipHintPanel(actorName, label) {
   const hintId = actorName || '';
   const hints = getHintsForActor(actorName);
   const revealed = _hintRevealed[hintId];
@@ -2308,8 +2308,9 @@ function skipHintPanel(actorName) {
   }
 
   const isOpen = _hintPanelOpen[hintId] || !!_hintRevealed[hintId];
+  const summaryText = label ? ('🎬 ' + label) : '🎬 Need help? (Skip or get hints)';
   const det = el('details', { style: { marginTop: '10px' } }, [
-    el('summary', {}, '🎬 Need help? (Skip or get hints)'),
+    el('summary', {}, summaryText),
     el('div', { style: { marginTop: '8px' } }, children),
   ]);
   if (isOpen) det.setAttribute('open', '');
@@ -2367,15 +2368,26 @@ function playersList(opts = {}) {
 function cardEl(c, opts = {}) {
   if (!c) return el('div');
   const hidden = c.hidden;
+  const actorFocus = opts.actorFocus;
+  let mainImage, cornerImage;
+  if (hidden) {
+    mainImage = el('div', { class: 'poster-fallback', style: { background: 'linear-gradient(135deg, var(--ink), #444)' } }, '?');
+    cornerImage = null;
+  } else if (actorFocus) {
+    // Actor photo is the main image; poster becomes the corner thumbnail
+    mainImage = c.actorPhoto
+      ? el('img', { class: 'poster', src: c.actorPhoto, alt: c.actor, loading: 'lazy', style: { objectPosition: 'top' }, onerror: (e) => { e.target.replaceWith(el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.actor || '')); } })
+      : el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.actor || '');
+    cornerImage = null;
+  } else {
+    // Movie poster is main; actor photo is the corner circle
+    mainImage = c.poster
+      ? el('img', { class: 'poster', src: c.poster, alt: c.film, loading: 'lazy', onerror: (e) => { e.target.replaceWith(el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.film || '')); } })
+      : el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.film || '');
+    cornerImage = c.actorPhoto ? el('img', { class: 'actor-photo', src: c.actorPhoto, alt: c.actor, loading: 'lazy', onerror: (e) => e.target.remove() }) : null;
+  }
   const wrap = el('div', { class: 'card ' + (opts.cls || '') }, [
-    el('div', { class: 'poster-wrap' }, [
-      hidden
-        ? el('div', { class: 'poster-fallback', style: { background: 'linear-gradient(135deg, var(--ink), #444)' } }, '?')
-        : (c.poster
-            ? el('img', { class: 'poster', src: c.poster, alt: c.film, loading: 'lazy', onerror: (e) => { e.target.replaceWith(el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.film || '')); } })
-            : el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor) } }, c.film || '')),
-      !hidden && c.actorPhoto ? el('img', { class: 'actor-photo', src: c.actorPhoto, alt: c.actor, loading: 'lazy', onerror: (e) => e.target.remove() }) : null,
-    ]),
+    el('div', { class: 'poster-wrap' }, [mainImage, cornerImage].filter(Boolean)),
     el('div', { class: 'label-band' }, [
       el('div', { class: 'actor-name' }, hidden ? '???' : c.actor),
       el('div', { class: 'film-title' }, hidden ? '' : ('"' + c.film + '"')),
@@ -2385,13 +2397,13 @@ function cardEl(c, opts = {}) {
   return wrap;
 }
 
-function pairEl() {
+function pairEl(opts = {}) {
   if (!local.state.currentPair) return el('div');
   const [a, b] = local.state.currentPair;
   return el('div', { class: 'pair-wrap' }, [
     el('div', { class: 'pair' }, [
-      cardEl(a),
-      cardEl(b),
+      cardEl(a, opts),
+      cardEl(b, opts),
     ]),
     el('div', { class: 'vs-badge' }, 'VS'),
   ]);
@@ -2555,7 +2567,7 @@ function renderSixDegreesPhase() {
   // playing
   const root = el('div', {}, [
     roundHeader(),
-    pairEl(),
+    pairEl({ actorFocus: true }),
     el('div', { class: 'panel' }, [
       el('div', { class: 'field' }, [
         el('label', {}, 'Your chain'),
@@ -2581,8 +2593,8 @@ function renderSixDegreesPhase() {
       ]),
       el('div', { class: 'small muted', style: { marginTop: '8px' } }, 'First valid submission wins. Others vote.'),
     ]),
-    skipHintPanel(local.state.currentPair?.[0]?.actor),
-    skipHintPanel(local.state.currentPair?.[1]?.actor),
+    skipHintPanel(local.state.currentPair?.[0]?.actor, 'Actor A: ' + (local.state.currentPair?.[0]?.actor || '')),
+    skipHintPanel(local.state.currentPair?.[1]?.actor, 'Actor B: ' + (local.state.currentPair?.[1]?.actor || '')),
     el('details', {}, [el('summary', {}, 'Scoreboard'), playersList()]),
     footer(),
   ]);
@@ -2599,7 +2611,7 @@ function renderSixDegreesVoting() {
   const youVoted = votes[local.myId];
   const root = el('div', {}, [
     roundHeader(),
-    pairEl(),
+    pairEl({ actorFocus: true }),
     el('div', { class: 'panel' }, [
       el('h3', {}, `${s.name} claims ${s.degrees}°`),
       el('div', { class: 'chain-display', style: { marginTop: '10px' } }, s.chain),
@@ -2630,7 +2642,7 @@ function renderSixDegreesRoundEnd() {
   const last = local.state.history[local.state.history.length - 1];
   const root = el('div', {}, [
     roundHeader(),
-    pairEl(),
+    pairEl({ actorFocus: true }),
     el('div', { class: 'panel center' }, last && last.accepted
       ? [
           el('h2', { style: { color: 'var(--mint)' } }, `${last.winner} +1 (${last.degrees}°)`),
@@ -2661,7 +2673,7 @@ function renderFilmographyPhase() {
 
   const root = el('div', {}, [
     roundHeader(),
-    el('div', { class: 'single-card-wrap rotated' }, [cardEl(local.state.currentCard)]),
+    el('div', { class: 'single-card-wrap rotated' }, [cardEl(local.state.currentCard, { actorFocus: true })]),
     el('div', { class: 'panel', style: { marginTop: '12px' } }, [
       el('h3', {}, isFinal ? `Final film — name one more to win!` : `${ap ? ap.name : '—'}'s turn`),
       el('div', { class: 'small muted' }, 'Name a film featuring ' + (local.state.currentCard?.actor || 'the actor') + '. No repeats. Animated and voiceover roles don\'t count.'),
@@ -2818,7 +2830,7 @@ function renderTakeSixPhase() {
     roundHeader(),
     el('div', { class: 'panel' }, [
       el('h3', {}, 'Anchor card'),
-      el('div', { class: 'single-card-wrap' }, [cardEl(ms.anchor)]),
+      el('div', { class: 'single-card-wrap' }, [cardEl(ms.anchor, { actorFocus: true })]),
     ]),
     el('div', { class: 'panel' }, [
       el('h3', {}, myTurn ? `Your turn — pick a card to play` : `${ap ? ap.name : '—'}'s turn`),
@@ -2829,10 +2841,9 @@ function renderTakeSixPhase() {
         renderTakeSixPhase();
       }}, [
         el('div', { class: 'poster-wrap' }, [
-          c.poster
-            ? el('img', { class: 'poster', src: c.poster, alt: c.film })
-            : el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor), fontSize: '20px' } }, c.film || ''),
-          c.actorPhoto ? el('img', { class: 'actor-photo', src: c.actorPhoto }) : null,
+          c.actorPhoto
+            ? el('img', { class: 'poster', src: c.actorPhoto, alt: c.actor, style: { objectPosition: 'top' } })
+            : el('div', { class: 'poster-fallback', style: { background: gradientFor(c.actor), fontSize: '20px' } }, c.actor || ''),
         ]),
         el('div', { class: 'label-band' }, [
           el('div', { class: 'actor-name' }, c.actor),
@@ -2894,8 +2905,8 @@ function renderTakeSixVoting() {
   const root = el('div', {}, [
     roundHeader(),
     el('div', { class: 'pair' }, [
-      cardEl(ms.anchor),
-      cardEl(s.card),
+      cardEl(ms.anchor, { actorFocus: true }),
+      cardEl(s.card, { actorFocus: true }),
     ]),
     el('div', { class: 'panel' }, [
       el('h3', {}, `${s.name} plays — ${s.degrees}°`),
