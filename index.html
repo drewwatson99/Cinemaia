@@ -1459,6 +1459,12 @@ function joinAsGuest(code) {
         if (timeoutId) clearTimeout(timeoutId);
         console.log('Connected to host');
         conn.send({ type: 'hello', name: local.name, id: local.myId });
+        // If we don't receive state within 2s, request it again
+        setTimeout(() => {
+          if (!local.state && !cancelled) {
+            try { conn.send({ type: 'hello', name: local.name, id: local.myId }); } catch (e) {}
+          }
+        }, 2000);
       });
 
       conn.on('data', (msg) => guestHandleHostMessage(msg));
@@ -1542,6 +1548,17 @@ function hostHandleGuestMessage(peerId, msg) {
       }
       broadcastState();
       renderForPhase();
+      // PeerJS race: DataChannel may not be fully bidirectional yet.
+      // Re-send state to the new guest after a short delay to ensure delivery.
+      const guestConn = local.connections[peerId];
+      if (guestConn) {
+        setTimeout(() => {
+          try { guestConn.send({ type: 'state', state: personalizeState(peerId) }); } catch (e) {}
+        }, 500);
+        setTimeout(() => {
+          try { guestConn.send({ type: 'state', state: personalizeState(peerId) }); } catch (e) {}
+        }, 1500);
+      }
       break;
     }
     // SIX DEGREES & TAKE SIX
